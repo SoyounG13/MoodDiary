@@ -11,6 +11,14 @@
 #define new DEBUG_NEW
 #endif
 
+#pragma warning(disable : 4996)
+
+std::string FormatString(const std::string& str, int value1, int value2)
+{
+	char buffer[256]; // 포맷된 문자열을 저장할 버퍼
+	sprintf(buffer, str.c_str(), value1, value2);
+	return std::string(buffer);
+}
 
 // CChildView
 
@@ -126,7 +134,7 @@ void CChildView::ReadDataFromFile(string filename)
 		for (int i = 0; i < 4; i++)
 		{
 			getline(ss, token, ' ');
-			d.housework[i] = stoi(token);
+			d.weather[i] = stoi(token);
 		}
 
 		for (int i = 0; i < 11; i++)
@@ -159,72 +167,6 @@ void CChildView::ReadDataFromFile(string filename)
 
 	infile.close();
 }
-
-// 웹캠으로부터 사진을 찍고 CImage에 저장하는 함수
-void CChildView::CaptureWebcamImage(CImage& image)
-{
-	VideoCapture capture(0);  // 웹캠을 엽니다.
-
-	if (!capture.isOpened())
-	{
-		AfxMessageBox(_T("웹캠을 열 수 없습니다."));
-		return;
-	}
-
-	Mat frame;
-	capture.read(frame);  // 웹캠으로부터 프레임을 읽어옵니다.
-
-	// 윈도우 생성 및 이미지 표시
-	cv::namedWindow("이미지");
-	cv::imshow("이미지", frame);
-
-	// 키 입력 대기
-	cv::waitKey(0);
-
-	// 윈도우 닫기
-	cv::destroyAllWindows();
-
-
-	// OpenCV의 Mat을 CImage로 변환합니다.
-	image.Create(frame.cols, frame.rows, 24);
-	uchar* imgBuffer = (uchar*)image.GetBits();
-	int imgPitch = image.GetPitch();
-
-	Mat imgRGB(frame.rows, frame.cols, CV_8UC3, imgBuffer, imgPitch);
-	cvtColor(frame, imgRGB, COLOR_BGR2RGB);
-
-	capture.release();  // 웹캠 사용이 끝났으므로 해제합니다.
-}
-
-// CImage를 PNG 파일로 저장하는 함수
-void CChildView::SaveImageToPNG(CImage& image, CString filename)
-{
-	// GDI+ 초기화
-	Gdiplus::GdiplusStartupInput gdiplusStartupInput;
-	ULONG_PTR gdiplusToken;
-	Gdiplus::GdiplusStartup(&gdiplusToken, &gdiplusStartupInput, NULL);
-
-	// CImage를 GDI+ Bitmap으로 변환
-	Gdiplus::Bitmap bitmap((HBITMAP)image, NULL);
-
-	// 저장할 폴더 경로
-	CString folderPath;
-	SHGetFolderPath(NULL, CSIDL_MYPICTURES, NULL, 0, folderPath.GetBuffer(MAX_PATH));
-	folderPath.ReleaseBuffer();
-
-	// 저장할 파일 경로
-	CString filePath = folderPath + _T("\\picture\\") + filename;
-
-	// 폴더가 없는 경우 폴더를 생성합니다.
-	SHCreateDirectoryEx(NULL, folderPath + _T("\\picture"), NULL);
-
-	// PNG로 저장
-	bitmap.Save(filePath, &Gdiplus::ImageFormatPNG);
-
-	// GDI+ 종료
-	Gdiplus::GdiplusShutdown(gdiplusToken);
-}
-
 
 void CChildView::UpdateData(string filename, Data newData, int monthData, int dateData)
 {
@@ -314,6 +256,194 @@ void CChildView::UpdateData(string filename, Data newData, int monthData, int da
 	// 원본 파일 삭제 후 임시 파일을 원본 파일명으로 변경
 	remove(filename.c_str());
 	rename("temp.txt", filename.c_str());
+}
+
+// 웹캠으로부터 사진을 찍고 CImage에 저장하는 함수
+void CChildView::CaptureWebcamImage(CImage& image)
+{
+	cv::VideoCapture capture(0);  // 웹캠을 엽니다.
+
+	if (!capture.isOpened())
+	{
+		AfxMessageBox(_T("웹캠을 열 수 없습니다."));
+		return;
+	}
+
+	cv::Mat frame_old, frame;
+	capture.read(frame_old);  // 웹캠으로부터 프레임을 읽어옵니다.
+
+	resize(frame_old, frame, cv::Size(450, 300));
+
+	// OpenCV의 Mat을 CImage로 변환합니다.
+	image.Create(frame.cols, frame.rows, 24);
+	uchar* imgBuffer = (uchar*)image.GetBits();
+	int imgPitch = image.GetPitch();
+
+	cv::Mat imgRGB(frame.rows, frame.cols, CV_8UC3, imgBuffer, imgPitch);
+	cvtColor(frame, imgRGB, cv::COLOR_BGR2RGB);
+
+	capture.release();  // 웹캠 사용이 끝났으므로 해제합니다.
+}
+
+bool CChildView::SaveImageAsPNG(const CString& filePath, CImage& image)
+{
+	// 파일 확장자를 검사하여 PNG 파일인지 확인합니다.
+	CString fileExt = filePath.Right(4);
+	if (fileExt.CompareNoCase(_T(".png")) != 0)
+	{
+		// 파일 확장자가 .png가 아니면 저장할 수 없습니다.
+		return false;
+	}
+
+	// 원하는 이미지 크기를 지정합니다.
+	int desiredWidth = 450;
+	int desiredHeight = 300;
+
+	// 이미지를 원하는 크기로 조정합니다.
+	CImage resizedImage;
+	if (!resizedImage.Create(desiredWidth, desiredHeight, image.GetBPP()))
+	{
+		// 이미지 크기를 조정할 수 없습니다.
+		return false;
+	}
+	if (!image.StretchBlt(resizedImage.GetDC(), 0, 0, desiredWidth, desiredHeight, SRCCOPY))
+	{
+		// 이미지를 조정할 수 없습니다.
+		return false;
+	}
+	resizedImage.ReleaseDC();
+
+	// WIC(Windows Imaging Component) 팩토리를 생성합니다.
+	IWICImagingFactory* pFactory = nullptr;
+	HRESULT hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&pFactory));
+	if (FAILED(hr))
+	{
+		// WIC 팩토리를 생성할 수 없습니다.
+		return false;
+	}
+
+	// PNG 인코더를 생성합니다.
+	IWICBitmapEncoder* pEncoder = nullptr;
+	hr = pFactory->CreateEncoder(GUID_ContainerFormatPng, nullptr, &pEncoder);
+	if (FAILED(hr))
+	{
+		// PNG 인코더를 생성할 수 없습니다.
+		pFactory->Release();
+		return false;
+	}
+
+	// 파일명을 유니코드 문자열로 변환합니다.
+	LPCWSTR wszFilePath = filePath;
+
+	// 파일을 열고 PNG 인코더에 대한 스트림을 생성합니다.
+	IStream* pStream = nullptr;
+	hr = SHCreateStreamOnFile(wszFilePath, STGM_CREATE | STGM_WRITE, &pStream);
+	if (FAILED(hr))
+	{
+		// 파일을 열 수 없습니다.
+		pEncoder->Release();
+		pFactory->Release();
+		return false;
+	}
+
+	// PNG 인코더에 대한 스트림을 설정합니다.
+	hr = pEncoder->Initialize(pStream, WICBitmapEncoderNoCache);
+	if (FAILED(hr))
+	{
+		// 스트림을 설정할 수 없습니다.
+		pStream->Release();
+		pEncoder->Release();
+		pFactory->Release();
+		return false;
+	}
+
+	// PNG 인코딩을 위한 비트맵 인코더를 생성합니다.
+	IWICBitmapFrameEncode* pBitmapEncoder = nullptr;
+	hr = pEncoder->CreateNewFrame(&pBitmapEncoder, nullptr);
+	if (FAILED(hr))
+	{
+		// 비트맵 인코더를 생성할 수 없습니다.
+		pStream->Release();
+		pEncoder->Release();
+		pFactory->Release();
+		return false;
+	}
+
+	// 비트맵 인코더에 대한 속성을 설정합니다.
+	hr = pBitmapEncoder->Initialize(nullptr);
+	if (FAILED(hr))
+	{
+		// 비트맵 인코더를 초기화할 수 없습니다.
+		pBitmapEncoder->Release();
+		pStream->Release();
+		pEncoder->Release();
+		pFactory->Release();
+		return false;
+	}
+
+	// CImage를 HBITMAP으로 변환합니다.
+	HBITMAP hBitmap = resizedImage;
+	if (hBitmap == nullptr)
+	{
+		// CImage를 HBITMAP으로 변환할 수 없습니다.
+		pBitmapEncoder->Release();
+		pStream->Release();
+		pEncoder->Release();
+		pFactory->Release();
+		return false;
+	}
+
+	// HBITMAP을 WIC 비트맵으로 변환합니다.
+	IWICBitmap* pWICBitmap = nullptr;
+	hr = pFactory->CreateBitmapFromHBITMAP(hBitmap, nullptr, WICBitmapUseAlpha, &pWICBitmap);
+	if (FAILED(hr))
+	{
+		// HBITMAP을 WIC 비트맵으로 변환할 수 없습니다.
+		DeleteObject(hBitmap);
+		pBitmapEncoder->Release();
+		pStream->Release();
+		pEncoder->Release();
+		pFactory->Release();
+		return false;
+	}
+
+	// WIC 비트맵을 비트맵 인코더에 추가합니다.
+	hr = pBitmapEncoder->WriteSource(pWICBitmap, nullptr);
+	if (FAILED(hr))
+	{
+		// WIC 비트맵을 비트맵 인코더에 추가할 수 없습니다.
+		pWICBitmap->Release();
+		DeleteObject(hBitmap);
+		pBitmapEncoder->Release();
+		pStream->Release();
+		pEncoder->Release();
+		pFactory->Release();
+		return false;
+	}
+
+	// PNG 파일을 저장합니다.
+	hr = pBitmapEncoder->Commit();
+	if (FAILED(hr))
+	{
+		// PNG 파일을 저장할 수 없습니다.
+		pWICBitmap->Release();
+		DeleteObject(hBitmap);
+		pBitmapEncoder->Release();
+		pStream->Release();
+		pEncoder->Release();
+		pFactory->Release();
+		return false;
+	}
+
+	// 사용한 리소스를 정리합니다.
+	pWICBitmap->Release();
+	DeleteObject(hBitmap);
+	pBitmapEncoder->Release();
+	pStream->Release();
+	pEncoder->Release();
+	pFactory->Release();
+
+	return true;
 }
 
 
@@ -409,6 +539,10 @@ void CChildView::OnLButtonDown(UINT nFlags, CPoint point)
 		for (int i = 0; i < fe.size; i++)
 			if (fe.fe[i].click(point))
 			{
+				camera.colorImg.Destroy();
+				camera.colorImg.Load(L"image/Camera.png");
+				camera.select = false;
+
 				date = fe.fe[i].date;
 				dailyCheckMenu();
 				return;
@@ -423,7 +557,23 @@ void CChildView::OnLButtonDown(UINT nFlags, CPoint point)
 			if (em[i].click(point))
 				return;
 		if (camera.click(point))
-			return;
+		{
+			if (camera.select)
+			{
+				CImage temp;
+				CString dir;
+
+				dir.Format(L"picture/%d_%d.png", month, date);
+
+				CaptureWebcamImage(temp);
+				SaveImageAsPNG(dir, temp);
+
+				camera.colorImg.Destroy();
+				camera.colorImg.Load(dir);
+
+				RedrawWindow();
+			}
+		}
 		if (save.click(point))
 		{
 			for (int i = 0; i < 6; i++)
@@ -439,6 +589,8 @@ void CChildView::OnLButtonDown(UINT nFlags, CPoint point)
 				data[month - 1][date - 1].food[i] = em[food].element[i].select;
 			for (int i = 0; i < 3; i++)
 				data[month - 1][date - 1].housework[i] = em[housework].element[i].select;
+			if (camera.select)
+				data[month - 1][date - 1].picture = FormatString("%d_%d", month, date);
 			UpdateData("data.txt", data[month - 1][date - 1], month, date);
 			calendarMenu();
 		}

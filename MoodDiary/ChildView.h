@@ -8,13 +8,14 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
+#include <cstdio>
 #include <string>
 #include <opencv2/opencv.hpp>
 #include <atlimage.h>
 #include <shlobj.h>
 #include <gdiplusheaders.h>
+#include <wincodec.h> // PNG 포맷을 지원하기 위해 포함해야 함
 using namespace std;
-using namespace cv;
 
 // CChildView 창
 struct Data
@@ -571,7 +572,7 @@ class CChildView : public CWnd
 	void ReadDataFromFile(string filename);
 	void UpdateData(string filename, Data newData, int monthData, int dateData);
 	void CaptureWebcamImage(CImage& image);
-	void SaveImageToPNG(CImage& image, CString filename);
+	bool SaveImageAsPNG(const CString& filePath, CImage& image);
 
 // 생성입니다.
 public:
